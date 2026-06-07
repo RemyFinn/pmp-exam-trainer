@@ -6,9 +6,9 @@
 
 ```bash
 cd /Users/remy/Desktop/PMP学习/pmp-practice-system
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
-pip install fastapi uvicorn openpyxl pypdf pdfplumber
+python -m pip install fastapi uvicorn openpyxl pypdf pdfplumber
 npm install
 npm run build
 python -m app.import_data
@@ -20,6 +20,14 @@ python -m uvicorn app.main:app --reload --port 8000
 
 ```text
 http://localhost:8000
+```
+
+如果切换分支或移动项目目录后遇到 `zsh: command not found: python`，通常是 `.venv` 仍然指向旧目录。重新生成虚拟环境即可：
+
+```bash
+python3 -m venv --clear .venv
+source .venv/bin/activate
+python -m pip install fastapi uvicorn openpyxl pypdf pdfplumber
 ```
 
 ## 数据源
