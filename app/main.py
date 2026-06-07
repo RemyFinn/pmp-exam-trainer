@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .auth import create_initial_admin
 from .db import ROOT_DIR, init_db
 from .routes import router
 
@@ -14,6 +15,7 @@ app = FastAPI(title="PMP Practice System")
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    create_initial_admin()
 
 
 app.include_router(router)

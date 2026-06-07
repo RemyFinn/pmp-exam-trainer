@@ -9,12 +9,15 @@ import { PracticeView } from './views/PracticeView'
 import { StrategyView } from './views/StrategyView'
 import { WrongItemsView } from './views/WrongItemsView'
 import { AdminView } from './views/AdminView'
+import { LoginView } from './views/LoginView'
+import { UsersView } from './views/UsersView'
 
 const ROUTE_TO_VIEW = {
   '/': 'home',
   '/strategies': 'strategies',
   '/wrong': 'wrong',
   '/admin': 'admin',
+  '/users': 'users',
   '/practice': 'practice',
 }
 
@@ -23,6 +26,7 @@ const VIEW_TO_ROUTE = {
   strategies: '/strategies',
   wrong: '/wrong',
   admin: '/admin',
+  users: '/users',
   practice: '/practice',
 }
 
@@ -41,6 +45,8 @@ export default function App() {
   })
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState(null)
+  const [user, setUser] = useState(null)
+  const [authChecked, setAuthChecked] = useState(false)
 
   const currentQuestion = questions[currentIndex]
   const submittedElapsed = useMemo(() => {
@@ -65,6 +71,17 @@ export default function App() {
     const data = await api('/api/exams')
     data.sort((a, b) => EXAM_ORDER.indexOf(a.code) - EXAM_ORDER.indexOf(b.code))
     setExams(data)
+  }
+
+  async function loadMe() {
+    try {
+      const data = await api('/api/auth/me')
+      setUser(data)
+    } catch {
+      setUser(null)
+    } finally {
+      setAuthChecked(true)
+    }
   }
 
   async function run(action, successMessage) {
@@ -135,25 +152,66 @@ export default function App() {
     await run(loadExams, '统计已刷新')
   }
 
+  async function logout() {
+    await run(async () => {
+      await api('/api/auth/logout', { method: 'POST' })
+      setUser(null)
+      setQuestions([])
+      setSubmitted(new Map())
+      setMode(null)
+      navigate('/')
+    }, '已退出登录')
+  }
+
   useEffect(() => {
-    loadExams().catch((error) => setNotice({ type: 'error', text: error.message }))
+    loadMe()
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    loadExams().catch((error) => setNotice({ type: 'error', text: error.message }))
+  }, [user])
 
   useEffect(() => {
     document.documentElement.dataset.font = fontMode
     localStorage.setItem('pmp-font-mode', fontMode)
   }, [fontMode])
 
+  if (!authChecked) {
+    return <div className="grid min-h-dvh place-items-center bg-paper-50 text-sm font-medium text-ink-400">正在加载...</div>
+  }
+
+  if (!user) {
+    return (
+      <div className="relative min-h-dvh bg-paper-50">
+        <LoginView
+          onLogin={(nextUser) => {
+            setUser(nextUser)
+            setNotice({ type: 'success', text: '已登录' })
+          }}
+          notify={setNotice}
+        />
+        <div className="pointer-events-none fixed left-0 right-0 top-4 z-50 px-4">
+          <div className="pointer-events-auto">
+            <AnimatePresence>{notice && <Notice notice={notice} onClose={() => setNotice(null)} />}</AnimatePresence>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-dvh bg-paper-50 text-ink-950">
       <a className="skip-link" href="#main">跳到主要内容</a>
       <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)]">
-        <Sidebar view={view || 'home'} totals={totals} />
+        <Sidebar view={view || 'home'} totals={totals} user={user} onLogout={logout} />
         <main id="main" className="min-w-0 px-4 py-4 sm:px-6 lg:px-8">
           <TopBar onRefresh={refreshEverything} loading={loading} fontMode={fontMode} setFontMode={setFontMode} />
           <AnimatePresence>{notice && <Notice notice={notice} onClose={() => setNotice(null)} />}</AnimatePresence>
           <AnimatePresence mode="wait">
             {!view && <Navigate key="not-found" to="/" replace />}
+            {view === 'admin' && user.role !== 'admin' && <Navigate key="admin-denied" to="/" replace />}
+            {view === 'users' && user.role !== 'admin' && <Navigate key="users-denied" to="/" replace />}
             {view === 'home' && <HomeView key="home" exams={exams} totals={totals} onStart={startPractice} />}
             {view === 'strategies' && (
               <StrategyView
@@ -236,6 +294,7 @@ export default function App() {
             {view === 'admin' && (
               <AdminView key="admin" exams={exams} reloadExams={loadExams} notify={setNotice} run={run} />
             )}
+            {view === 'users' && <UsersView key="users" notify={setNotice} run={run} />}
             {view === 'wrong' && (
               <WrongItemsView
                 key="wrong"

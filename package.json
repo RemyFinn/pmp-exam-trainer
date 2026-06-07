@@ -1,7 +1,7 @@
 {
   "name": "pmp-practice-system",
   "version": "1.0.0",
-  "description": "本地 Web 做题系统，导入四套 PMP 模拟题 Markdown 和 Excel 阅卷结果，使用 FastAPI + SQLite 保存题库、错题集和作答记录。",
+  "description": "可本地运行和部署的 PMP 做题系统，使用 FastAPI、React 和 PostgreSQL 保存题库、错题集和作答记录。",
   "main": "index.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",

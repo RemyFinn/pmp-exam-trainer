@@ -5,9 +5,15 @@ import os
 import re
 import time
 import urllib.request
+from http.cookiejar import CookieJar
+from urllib.error import HTTPError
 
 
 BASE = os.environ.get("BASE_URL", "http://127.0.0.1:8000")
+USERNAME = os.environ.get("VERIFY_USERNAME", os.environ.get("FIRST_ADMIN_USERNAME", "remy"))
+PASSWORD = os.environ.get("VERIFY_PASSWORD", os.environ.get("FIRST_ADMIN_PASSWORD", "change-me-now"))
+COOKIE_JAR = CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_JAR))
 
 
 def req(path: str, method: str = "GET", data: dict | None = None):
@@ -18,10 +24,25 @@ def req(path: str, method: str = "GET", data: dict | None = None):
         method=method,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with OPENER.open(request, timeout=10) as response:
         raw = response.read().decode()
         content_type = response.headers.get("Content-Type", "")
         return raw if "text/html" in content_type else json.loads(raw)
+
+
+def req_status(path: str, method: str = "GET", data: dict | None = None, opener=OPENER) -> int:
+    body = None if data is None else json.dumps(data).encode()
+    request = urllib.request.Request(
+        BASE + path,
+        data=body,
+        method=method,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with opener.open(request, timeout=10) as response:
+            return response.status
+    except HTTPError as error:
+        return error.code
 
 
 def answer_list(answer: str) -> list[str]:
@@ -34,6 +55,30 @@ def main() -> None:
     for frontend_path in ("/strategies", "/wrong", "/admin", "/practice"):
         route_html = req(frontend_path)
         assert "PMP 做题系统" in route_html or "PMP 练习" in route_html, frontend_path
+
+    health = req("/api/health")
+    assert health["ok"] is True, health
+
+    anonymous = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    assert req_status("/api/exams", opener=anonymous) == 401
+
+    user = req("/api/auth/login", "POST", {"username": USERNAME, "password": PASSWORD})
+    assert user["role"] == "admin", user
+
+    verify_username = f"verify_{int(time.time())}"
+    created_user = req(
+        "/api/users",
+        "POST",
+        {
+            "username": verify_username,
+            "display_name": "验证用户",
+            "password": "verify-password",
+            "role": "user",
+        },
+    )
+    assert created_user["role"] == "user", created_user
+    disabled_user = req(f"/api/users/{created_user['id']}", "PATCH", {"is_active": False})
+    assert disabled_user["is_active"] is False, disabled_user
 
     exams = req("/api/exams")
     assert len(exams) == 4, len(exams)
@@ -134,6 +179,7 @@ def main() -> None:
                 "frontend_routes": "ok",
                 "attempt_correct": attempt["is_correct"],
                 "crud": "ok",
+                "users": "ok",
             },
             ensure_ascii=False,
         )

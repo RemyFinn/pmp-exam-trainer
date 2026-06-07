@@ -1,27 +1,33 @@
 from __future__ import annotations
 
-import sqlite3
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from psycopg import Connection
+from psycopg.rows import dict_row
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"
-DB_PATH = DATA_DIR / "pmp.sqlite"
+SQLITE_DB_PATH = DATA_DIR / "pmp.sqlite"
 SCHEMA_PATH = ROOT_DIR / "schema.sql"
 
 
-def get_connection() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+def get_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is required. Use PostgreSQL locally or in production.")
+    return database_url
+
+
+def get_connection() -> Connection:
+    return Connection.connect(get_database_url(), row_factory=dict_row)
 
 
 @contextmanager
-def transaction() -> Iterator[sqlite3.Connection]:
+def transaction() -> Iterator[Connection]:
     conn = get_connection()
     try:
         yield conn
@@ -35,18 +41,10 @@ def transaction() -> Iterator[sqlite3.Connection]:
 
 def init_db() -> None:
     with transaction() as conn:
-        conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
-        columns = {row["name"] for row in conn.execute("PRAGMA table_info(attempts)").fetchall()}
-        if "elapsed_seconds" not in columns:
-            conn.execute("ALTER TABLE attempts ADD COLUMN elapsed_seconds INTEGER")
-        wrong_columns = {row["name"] for row in conn.execute("PRAGMA table_info(wrong_items)").fetchall()}
-        if "wrong_count_delta" not in wrong_columns:
-            conn.execute("ALTER TABLE wrong_items ADD COLUMN wrong_count_delta INTEGER NOT NULL DEFAULT 0")
-        if "attempt_count_delta" not in wrong_columns:
-            conn.execute("ALTER TABLE wrong_items ADD COLUMN attempt_count_delta INTEGER NOT NULL DEFAULT 0")
+        conn.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
-def row_to_dict(row: sqlite3.Row | None) -> dict | None:
+def row_to_dict(row: dict | None) -> dict | None:
     if row is None:
         return None
     return dict(row)

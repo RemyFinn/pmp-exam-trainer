@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from openpyxl import load_workbook
 
+from .auth import create_initial_admin, hash_password
 from .db import init_db, transaction
 from .utils import is_answer_correct, normalize_correct_answer
 
@@ -183,11 +185,29 @@ def parse_excel(path: Path) -> dict[int, dict]:
     return rows
 
 
+def ensure_import_user(conn) -> int:
+    username = os.getenv("IMPORT_OWNER_USERNAME") or os.getenv("FIRST_ADMIN_USERNAME") or "remy"
+    display_name = os.getenv("IMPORT_OWNER_DISPLAY_NAME") or os.getenv("FIRST_ADMIN_DISPLAY_NAME") or username
+    password = os.getenv("IMPORT_OWNER_PASSWORD") or os.getenv("FIRST_ADMIN_PASSWORD") or "change-me-now"
+    row = conn.execute("SELECT id FROM users WHERE username = %s", (username,)).fetchone()
+    if row:
+        return int(row["id"])
+    created = conn.execute(
+        """
+        INSERT INTO users (username, display_name, password_hash, role, is_active)
+        VALUES (%s, %s, %s, 'admin', 1)
+        RETURNING id
+        """,
+        (username, display_name, hash_password(password)),
+    ).fetchone()
+    return int(created["id"])
+
+
 def upsert_exam(conn, source: ExamSource) -> int:
     conn.execute(
         """
         INSERT INTO exams (code, title, source_markdown, source_excel, updated_at)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
         ON CONFLICT(code) DO UPDATE SET
             title = excluded.title,
             source_markdown = excluded.source_markdown,
@@ -196,11 +216,11 @@ def upsert_exam(conn, source: ExamSource) -> int:
         """,
         (source.code, source.title, str(source.markdown), str(source.excel)),
     )
-    row = conn.execute("SELECT id FROM exams WHERE code = ?", (source.code,)).fetchone()
+    row = conn.execute("SELECT id FROM exams WHERE code = %s", (source.code,)).fetchone()
     return int(row["id"])
 
 
-def upsert_question(conn, exam_id: int, question: dict, answer: dict) -> int:
+def upsert_question(conn, user_id: int, exam_id: int, question: dict, answer: dict) -> int:
     correct_answer = answer["correct_answer"]
     is_multi = detect_multi_from_stem(question["stem"], correct_answer)
     conn.execute(
@@ -209,7 +229,7 @@ def upsert_question(conn, exam_id: int, question: dict, answer: dict) -> int:
             exam_id, number, stem, is_multi, correct_answer, explanation,
             imported_user_answer, imported_judgement, imported_note, deleted_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, CURRENT_TIMESTAMP)
         ON CONFLICT(exam_id, number) DO UPDATE SET
             stem = excluded.stem,
             is_multi = excluded.is_multi,
@@ -234,15 +254,15 @@ def upsert_question(conn, exam_id: int, question: dict, answer: dict) -> int:
         ),
     )
     row = conn.execute(
-        "SELECT id FROM questions WHERE exam_id = ? AND number = ?",
+        "SELECT id FROM questions WHERE exam_id = %s AND number = %s",
         (exam_id, question["number"]),
     ).fetchone()
     question_id = int(row["id"])
 
-    conn.execute("DELETE FROM options WHERE question_id = ?", (question_id,))
+    conn.execute("DELETE FROM options WHERE question_id = %s", (question_id,))
     for option in question["options"]:
         conn.execute(
-            "INSERT INTO options (question_id, label, text) VALUES (?, ?, ?)",
+            "INSERT INTO options (question_id, label, text) VALUES (%s, %s, %s)",
             (question_id, option["label"], option["text"]),
         )
 
@@ -250,42 +270,44 @@ def upsert_question(conn, exam_id: int, question: dict, answer: dict) -> int:
         imported_correct = is_answer_correct(answer["user_answer"], correct_answer)
         conn.execute(
             """
-            INSERT INTO attempts (question_id, mode, selected_answer, is_correct)
-            SELECT ?, 'imported_exam_result', ?, ?
+            INSERT INTO attempts (user_id, question_id, mode, selected_answer, is_correct)
+            SELECT %s, %s, 'imported_exam_result', %s, %s
             WHERE NOT EXISTS (
                 SELECT 1 FROM attempts
-                WHERE question_id = ? AND mode = 'imported_exam_result'
+                WHERE user_id = %s AND question_id = %s AND mode = 'imported_exam_result'
             )
             """,
-            (question_id, answer["user_answer"], int(imported_correct), question_id),
+            (user_id, question_id, answer["user_answer"], int(imported_correct), user_id, question_id),
         )
 
     if answer["judgement"] == "错误":
         conn.execute(
             """
-            INSERT INTO wrong_items (question_id, active, source, added_at, learned_at, updated_at)
-            VALUES (?, 1, 'import', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
-            ON CONFLICT(question_id) DO UPDATE SET
+            INSERT INTO wrong_items (user_id, question_id, active, source, added_at, learned_at, updated_at)
+            VALUES (%s, %s, 1, 'import', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, question_id) DO UPDATE SET
                 active = CASE WHEN wrong_items.learned_at IS NULL THEN 1 ELSE wrong_items.active END,
                 source = CASE WHEN wrong_items.learned_at IS NULL THEN 'import' ELSE wrong_items.source END,
                 updated_at = CURRENT_TIMESTAMP
             """,
-            (question_id,),
+            (user_id, question_id),
         )
     return question_id
 
 
 def import_all() -> dict:
     init_db()
+    create_initial_admin()
     summary = {}
     with transaction() as conn:
+        user_id = ensure_import_user(conn)
         for source in EXAMS:
             markdown_questions = parse_markdown(source)
             excel_answers = parse_excel(source.excel)
             exam_id = upsert_exam(conn, source)
             imported = 0
             for number in range(1, 181):
-                upsert_question(conn, exam_id, markdown_questions[number], excel_answers[number])
+                upsert_question(conn, user_id, exam_id, markdown_questions[number], excel_answers[number])
                 imported += 1
             summary[source.code] = imported
 
@@ -294,11 +316,12 @@ def import_all() -> dict:
             SELECT
                 COUNT(*) AS questions,
                 (SELECT COUNT(*) FROM options) AS options,
-                (SELECT COUNT(*) FROM wrong_items WHERE active = 1) AS active_wrong,
+                (SELECT COUNT(*) FROM wrong_items WHERE user_id = %s AND active = 1) AS active_wrong,
                 (SELECT COUNT(*) FROM attempts) AS attempts
             FROM questions
             WHERE deleted_at IS NULL
-            """
+            """,
+            (user_id,),
         ).fetchone()
         summary["totals"] = dict(totals)
     return summary

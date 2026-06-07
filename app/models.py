@@ -5,6 +5,33 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class UserOut(BaseModel):
+    id: int
+    username: str
+    display_name: str = ""
+    role: str
+    is_active: bool = True
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=2)
+    display_name: str = ""
+    password: str = Field(min_length=6)
+    role: str = "user"
+
+
+class UserUpdate(BaseModel):
+    display_name: str | None = None
+    password: str | None = Field(default=None, min_length=6)
+    role: str | None = None
+    is_active: bool | None = None
+
+
 class OptionOut(BaseModel):
     id: int
     label: str

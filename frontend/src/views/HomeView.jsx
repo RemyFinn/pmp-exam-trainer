@@ -11,7 +11,7 @@ export function HomeView({ exams, totals, onStart }) {
             <h2 className="text-2xl font-semibold tracking-tight">选择练习</h2>
             <p className="mt-1 text-sm text-ink-400">按套卷练习，或混合打乱后复盘错题。</p>
           </div>
-          <Badge tone="blue">SQLite · 本地题库</Badge>
+          <Badge tone="blue">PostgreSQL · 个人记录</Badge>
         </div>
       <div className="divide-y divide-ink-950/[0.035]">
           {exams.map((exam) => (

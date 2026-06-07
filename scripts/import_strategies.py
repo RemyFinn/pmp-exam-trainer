@@ -197,7 +197,7 @@ def import_items(items: list[StrategyItem]) -> dict[str, int]:
             conn.execute(
                 """
                 INSERT INTO strategies (exam_code, category, title, summary, source_file, sort_order)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT(exam_code, category, title) DO UPDATE SET
                     summary = excluded.summary,
                     source_file = excluded.source_file,
@@ -208,7 +208,7 @@ def import_items(items: list[StrategyItem]) -> dict[str, int]:
             )
             strategy_id = int(
                 conn.execute(
-                    "SELECT id FROM strategies WHERE exam_code = ? AND category = ? AND title = ?",
+                    "SELECT id FROM strategies WHERE exam_code = %s AND category = %s AND title = %s",
                     (item.exam_code, item.category, item.title),
                 ).fetchone()["id"]
             )
@@ -219,15 +219,16 @@ def import_items(items: list[StrategyItem]) -> dict[str, int]:
                     continue
                 conn.execute(
                     """
-                    INSERT OR IGNORE INTO strategy_question_links (strategy_id, question_id)
-                    VALUES (?, ?)
+                    INSERT INTO strategy_question_links (strategy_id, question_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT(strategy_id, question_id) DO NOTHING
                     """,
                     (strategy_id, question_id),
                 )
                 linked += 1
         counts = {
-            "strategies": conn.execute("SELECT COUNT(*) FROM strategies").fetchone()[0],
-            "links": conn.execute("SELECT COUNT(*) FROM strategy_question_links").fetchone()[0],
+            "strategies": conn.execute("SELECT COUNT(*) AS count FROM strategies").fetchone()["count"],
+            "links": conn.execute("SELECT COUNT(*) AS count FROM strategy_question_links").fetchone()["count"],
             "skipped": skipped,
         }
         for row in conn.execute(

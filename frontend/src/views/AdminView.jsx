@@ -81,7 +81,7 @@ export function AdminView({ exams, reloadExams, notify, run }) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">题库管理</h2>
-          <p className="mt-1 text-sm text-ink-400">筛选、编辑和维护本地题库。</p>
+          <p className="mt-1 text-sm text-ink-400">筛选、编辑和维护题库。</p>
         </div>
         <Button variant="primary" onClick={resetForm}>
           <FilePenLine size={16} />
