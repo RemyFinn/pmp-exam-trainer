@@ -30,14 +30,6 @@ python -m uvicorn app.main:app --reload --port 8000
 http://localhost:8000
 ```
 
-如果切换分支或移动项目目录后遇到 `zsh: command not found: python`，通常是 `.venv` 仍然指向旧目录。重新生成虚拟环境即可：
-
-```bash
-python3 -m venv --clear .venv
-source .venv/bin/activate
-python -m pip install fastapi uvicorn openpyxl pypdf pdfplumber
-```
-
 ## 数据源
 
 导入脚本默认读取：
