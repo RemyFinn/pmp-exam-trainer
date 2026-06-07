@@ -2,7 +2,7 @@
 
 本地 Web 做题系统，导入四套 PMP 模拟题 Markdown 和 Excel 阅卷结果，使用 FastAPI + SQLite 保存题库、错题集和作答记录。
 
-## 启动
+## 首次初始化
 
 ```bash
 cd /Users/remy/Desktop/PMP学习/pmp-practice-system
@@ -13,6 +13,14 @@ npm install
 npm run build
 python -m app.import_data
 python scripts/import_strategies.py
+```
+
+## 日常启动
+
+```bash
+cd /Users/remy/Desktop/PMP学习/pmp-practice-system
+source .venv/bin/activate
+npm run build
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
