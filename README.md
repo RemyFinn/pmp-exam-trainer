@@ -34,7 +34,7 @@ python scripts/import_strategies.py
 cd /Users/remy/Desktop/PMP学习/pmp-practice-system
 source .venv/bin/activate
 npm run build
-python -m uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Windows：
@@ -43,7 +43,7 @@ Windows：
 cd C:\Users\Finn\Desktop\pmp-exam-trainer
 .\.venv\Scripts\Activate.ps1
 npm run build
-python -m uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 浏览器访问：
