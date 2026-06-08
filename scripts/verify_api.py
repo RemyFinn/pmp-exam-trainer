@@ -72,6 +72,25 @@ def main() -> None:
             ],
         },
     )
+    preview_wrong = req(
+        "/api/attempts",
+        "POST",
+        {
+            "question_id": created["id"],
+            "selected_options": ["B"],
+            "mode": "strategy-preview",
+        },
+    )
+    assert preview_wrong["is_correct"] is False, preview_wrong
+    assert preview_wrong["wrong_count"] == 0, preview_wrong
+    assert preview_wrong["attempt_count"] == 0, preview_wrong
+    assert preview_wrong["is_wrong_active"] is False, preview_wrong
+
+    preview_after = req(f"/api/questions/{created['id']}")
+    assert preview_after["wrong_count"] == 0, preview_after
+    assert preview_after["attempt_count"] == 0, preview_after
+    assert preview_after["is_wrong_active"] is False, preview_after
+
     attempt = req(
         "/api/attempts",
         "POST",
@@ -132,6 +151,7 @@ def main() -> None:
                 "wrong_after_learned": len(wrong_after),
                 "strategies": len(strategies),
                 "frontend_routes": "ok",
+                "strategy_preview_stats": "unchanged",
                 "attempt_correct": attempt["is_correct"],
                 "crud": "ok",
             },

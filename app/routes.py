@@ -235,29 +235,31 @@ def get_question(question_id: int) -> QuestionOut:
 def submit_attempt(payload: AttemptIn) -> AttemptOut:
     selected_answer = normalize_answer(payload.selected_options)
     elapsed_seconds = None if payload.elapsed_seconds is None else max(0, int(payload.elapsed_seconds))
+    is_preview = payload.mode == "strategy-preview"
     with transaction() as conn:
         question = fetch_question(conn, payload.question_id)
         correct = is_answer_correct(selected_answer, question["correct_answer"])
-        conn.execute(
-            """
-            INSERT INTO attempts (question_id, mode, selected_answer, is_correct, elapsed_seconds)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (payload.question_id, payload.mode, selected_answer, int(correct), elapsed_seconds),
-        )
-        if not correct:
+        if not is_preview:
             conn.execute(
                 """
-                INSERT INTO wrong_items (question_id, active, source, added_at, learned_at, updated_at)
-                VALUES (?, 1, 'attempt', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
-                ON CONFLICT(question_id) DO UPDATE SET
-                    active = 1,
-                    source = 'attempt',
-                    learned_at = NULL,
-                    updated_at = CURRENT_TIMESTAMP
+                INSERT INTO attempts (question_id, mode, selected_answer, is_correct, elapsed_seconds)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (payload.question_id,),
+                (payload.question_id, payload.mode, selected_answer, int(correct), elapsed_seconds),
             )
+            if not correct:
+                conn.execute(
+                    """
+                    INSERT INTO wrong_items (question_id, active, source, added_at, learned_at, updated_at)
+                    VALUES (?, 1, 'attempt', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
+                    ON CONFLICT(question_id) DO UPDATE SET
+                        active = 1,
+                        source = 'attempt',
+                        learned_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (payload.question_id,),
+                )
         wrong = conn.execute(
             "SELECT active FROM wrong_items WHERE question_id = ?",
             (payload.question_id,),
