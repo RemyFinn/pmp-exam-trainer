@@ -15,11 +15,33 @@ python -m app.import_data
 python scripts/import_strategies.py
 ```
 
+Windows：
+
+```powershell
+cd C:\Users\Finn\Desktop\pmp-exam-trainer
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install fastapi uvicorn openpyxl pypdf pdfplumber
+npm install
+npm run build
+python -m app.import_data
+python scripts/import_strategies.py
+```
+
 ## 日常启动
 
 ```bash
 cd /Users/remy/Desktop/PMP学习/pmp-practice-system
 source .venv/bin/activate
+npm run build
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+Windows：
+
+```powershell
+cd C:\Users\Finn\Desktop\pmp-exam-trainer
+.\.venv\Scripts\Activate.ps1
 npm run build
 python -m uvicorn app.main:app --reload --port 8000
 ```

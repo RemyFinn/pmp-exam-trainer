@@ -1,0 +1,12 @@
+.venv
+node_modules
+.git
+.gitignore
+__pycache__
+*.pyc
+data/*.bak
+data/*.verify.bak
+scripts/
+README.md
+.vscode
+.qoder
