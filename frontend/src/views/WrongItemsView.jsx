@@ -14,9 +14,11 @@ export function WrongItemsView({ exams, reloadExams, notify, run, onStartPractic
 
   async function loadWrongQuestions() {
     setIsLoading(true)
-    let path = '/api/questions?mode=wrong'
-    if (examFilter) path += `&exam=${encodeURIComponent(examFilter)}`
-    if (search.trim()) path += `&search=${encodeURIComponent(search.trim())}`
+    let path = '/api/wrong-items'
+    const params = []
+    if (examFilter) params.push(`exam=${encodeURIComponent(examFilter)}`)
+    if (search.trim()) params.push(`search=${encodeURIComponent(search.trim())}`)
+    if (params.length) path += `?${params.join('&')}`
     try {
       const data = await api(path)
       setQuestions(data)
@@ -32,7 +34,7 @@ export function WrongItemsView({ exams, reloadExams, notify, run, onStartPractic
 
   async function markLearned(questionId) {
     await run(async () => {
-      await api(`/api/wrong-items/${questionId}`, {
+      await api(`/api/questions/${questionId}/wrong-item`, {
         method: 'PATCH',
         body: JSON.stringify({ learned: true }),
       })
@@ -44,7 +46,7 @@ export function WrongItemsView({ exams, reloadExams, notify, run, onStartPractic
   async function adjustWrongCount(question, delta) {
     const nextCount = Math.max(0, (Number(question.wrong_count) || 0) + delta)
     await run(async () => {
-      const updated = await api(`/api/questions/${question.id}/wrong-count`, {
+      const updated = await api(`/api/questions/${question.id}/statistics`, {
         method: 'PATCH',
         body: JSON.stringify({ wrong_count: nextCount }),
       })
@@ -66,7 +68,7 @@ export function WrongItemsView({ exams, reloadExams, notify, run, onStartPractic
   async function adjustAttemptCount(question, delta) {
     const nextCount = Math.max(0, (Number(question.attempt_count) || 0) + delta)
     await run(async () => {
-      const updated = await api(`/api/questions/${question.id}/attempt-count`, {
+      const updated = await api(`/api/questions/${question.id}/statistics`, {
         method: 'PATCH',
         body: JSON.stringify({ attempt_count: nextCount }),
       })

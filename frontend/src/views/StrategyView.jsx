@@ -63,12 +63,10 @@ export function StrategyView({ exams, notify, run, reloadExams, onOpenQuestion }
   async function submitPreviewAttempt(selectedOptions) {
     if (!previewQuestion || previewResult) return
     try {
-      const response = await api('/api/attempts', {
+      const response = await api(`/api/questions/${previewQuestion.id}/answer-evaluations`, {
         method: 'POST',
         body: JSON.stringify({
-          question_id: previewQuestion.id,
           selected_options: selectedOptions,
-          mode: 'strategy-preview',
         }),
       })
       setPreviewResult(response)

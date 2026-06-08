@@ -67,11 +67,14 @@ class ExamOut(BaseModel):
     attempts: int
 
 
-class AttemptIn(BaseModel):
-    question_id: int
+class AnswerEvaluationIn(BaseModel):
     selected_options: list[str] = Field(default_factory=list)
-    mode: str = "practice"
     elapsed_seconds: int | None = None
+
+
+class AttemptIn(AnswerEvaluationIn):
+    question_id: int
+    mode: str = "practice"
 
 
 class AttemptOut(BaseModel):
@@ -93,12 +96,9 @@ class WrongItemPatch(BaseModel):
     source: str = "manual"
 
 
-class WrongCountPatch(BaseModel):
-    wrong_count: int = Field(ge=0)
-
-
-class AttemptCountPatch(BaseModel):
-    attempt_count: int = Field(ge=0)
+class QuestionStatisticsPatch(BaseModel):
+    wrong_count: int | None = Field(default=None, ge=0)
+    attempt_count: int | None = Field(default=None, ge=0)
 
 
 class OptionIn(BaseModel):
@@ -127,4 +127,4 @@ class QuestionUpdate(BaseModel):
     options: list[OptionIn] | None = None
 
 
-QuestionMode = Literal["exam", "mixed", "wrong", "admin"]
+QuestionMode = Literal["exam", "mixed", "admin"]

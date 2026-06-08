@@ -44,7 +44,7 @@ def main() -> None:
     mixed = req("/api/questions?mode=mixed")
     assert len(mixed) == 720, len(mixed)
 
-    wrong = req("/api/questions?mode=wrong")
+    wrong = req("/api/wrong-items")
     assert len(wrong) >= 0, len(wrong)
 
     strategies = req("/api/strategies")
@@ -72,24 +72,22 @@ def main() -> None:
             ],
         },
     )
-    preview_wrong = req(
-        "/api/attempts",
+    evaluation = req(
+        f"/api/questions/{created['id']}/answer-evaluations",
         "POST",
         {
-            "question_id": created["id"],
             "selected_options": ["B"],
-            "mode": "strategy-preview",
         },
     )
-    assert preview_wrong["is_correct"] is False, preview_wrong
-    assert preview_wrong["wrong_count"] == 0, preview_wrong
-    assert preview_wrong["attempt_count"] == 0, preview_wrong
-    assert preview_wrong["is_wrong_active"] is False, preview_wrong
+    assert evaluation["is_correct"] is False, evaluation
+    assert evaluation["wrong_count"] == 0, evaluation
+    assert evaluation["attempt_count"] == 0, evaluation
+    assert evaluation["is_wrong_active"] is False, evaluation
 
-    preview_after = req(f"/api/questions/{created['id']}")
-    assert preview_after["wrong_count"] == 0, preview_after
-    assert preview_after["attempt_count"] == 0, preview_after
-    assert preview_after["is_wrong_active"] is False, preview_after
+    evaluation_after = req(f"/api/questions/{created['id']}")
+    assert evaluation_after["wrong_count"] == 0, evaluation_after
+    assert evaluation_after["attempt_count"] == 0, evaluation_after
+    assert evaluation_after["is_wrong_active"] is False, evaluation_after
 
     attempt = req(
         "/api/attempts",
@@ -129,7 +127,7 @@ def main() -> None:
     assert wrong_attempt["is_correct"] is False, wrong_attempt
 
     learned = req(
-        f"/api/wrong-items/{created['id']}",
+        f"/api/questions/{created['id']}/wrong-item",
         "PATCH",
         {"learned": True},
     )
@@ -138,7 +136,7 @@ def main() -> None:
     deleted = req(f"/api/questions/{created['id']}", "DELETE")
     assert deleted["deleted"] is True
 
-    wrong_after = req("/api/questions?mode=wrong")
+    wrong_after = req("/api/wrong-items")
     assert len(wrong_after) == len(wrong), (len(wrong), len(wrong_after))
 
     print(
@@ -151,7 +149,7 @@ def main() -> None:
                 "wrong_after_learned": len(wrong_after),
                 "strategies": len(strategies),
                 "frontend_routes": "ok",
-                "strategy_preview_stats": "unchanged",
+                "answer_evaluation_stats": "unchanged",
                 "attempt_correct": attempt["is_correct"],
                 "crud": "ok",
             },

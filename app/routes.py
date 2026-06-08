@@ -4,17 +4,17 @@ from fastapi import APIRouter, HTTPException, Query
 
 from .db import transaction
 from .models import (
+    AnswerEvaluationIn,
     AttemptIn,
-    AttemptCountPatch,
     AttemptOut,
     ExamOut,
     QuestionCreate,
     QuestionOut,
+    QuestionStatisticsPatch,
     QuestionUpdate,
     StrategyLinkOut,
     StrategyOut,
     StrategyQuestionOut,
-    WrongCountPatch,
     WrongItemPatch,
 )
 from .utils import is_answer_correct, normalize_answer, normalize_correct_answer
@@ -119,7 +119,7 @@ def list_exams() -> list[ExamOut]:
 
 @router.get("/questions", response_model=list[QuestionOut])
 def list_questions(
-    mode: str = Query("mixed", pattern="^(exam|mixed|wrong|admin)$"),
+    mode: str = Query("mixed", pattern="^(exam|mixed|admin)$"),
     exam: str | None = None,
     shuffle: bool = False,
     search: str | None = None,
@@ -167,6 +167,11 @@ def list_questions(
     with transaction() as conn:
         rows = conn.execute(sql, params).fetchall()
         return [build_question(conn, dict(row)) for row in rows]
+
+
+@router.get("/wrong-items", response_model=list[QuestionOut])
+def list_wrong_items(exam: str | None = None, search: str | None = None) -> list[QuestionOut]:
+    return list_questions(mode="wrong", exam=exam, search=search)
 
 
 @router.get("/strategies", response_model=list[StrategyOut])
@@ -231,59 +236,79 @@ def get_question(question_id: int) -> QuestionOut:
         return build_question(conn, fetch_question(conn, question_id))
 
 
+def build_attempt_result(
+    conn,
+    question_id: int,
+    selected_answer: str,
+    elapsed_seconds: int | None,
+    correct: bool,
+    question: dict,
+) -> AttemptOut:
+    wrong = conn.execute(
+        "SELECT active FROM wrong_items WHERE question_id = ?",
+        (question_id,),
+    ).fetchone()
+    stats = conn.execute(
+        f"SELECT * FROM ({QUESTION_STATS_SQL}) WHERE question_id = ?",
+        (question_id,),
+    ).fetchone()
+    updated_question = fetch_question(conn, question_id)
+    return AttemptOut(
+        question_id=question_id,
+        selected_answer=selected_answer,
+        correct_answer=question["correct_answer"],
+        is_correct=correct,
+        explanation=question["explanation"],
+        is_wrong_active=bool(wrong["active"]) if wrong else False,
+        elapsed_seconds=elapsed_seconds,
+        wrong_count=int(updated_question["wrong_count"] or 0),
+        attempt_count=int(updated_question["attempt_count"] or 0),
+        last_wrong_at=stats["last_wrong_at"] if stats else None,
+    )
+
+
+@router.post("/questions/{question_id}/answer-evaluations", response_model=AttemptOut)
+def evaluate_answer(question_id: int, payload: AnswerEvaluationIn) -> AttemptOut:
+    selected_answer = normalize_answer(payload.selected_options)
+    elapsed_seconds = None if payload.elapsed_seconds is None else max(0, int(payload.elapsed_seconds))
+    with transaction() as conn:
+        question = fetch_question(conn, question_id)
+        correct = is_answer_correct(selected_answer, question["correct_answer"])
+        return build_attempt_result(conn, question_id, selected_answer, elapsed_seconds, correct, question)
+
+
 @router.post("/attempts", response_model=AttemptOut)
 def submit_attempt(payload: AttemptIn) -> AttemptOut:
     selected_answer = normalize_answer(payload.selected_options)
     elapsed_seconds = None if payload.elapsed_seconds is None else max(0, int(payload.elapsed_seconds))
-    is_preview = payload.mode == "strategy-preview"
     with transaction() as conn:
         question = fetch_question(conn, payload.question_id)
         correct = is_answer_correct(selected_answer, question["correct_answer"])
-        if not is_preview:
+        conn.execute(
+            """
+            INSERT INTO attempts (question_id, mode, selected_answer, is_correct, elapsed_seconds)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (payload.question_id, payload.mode, selected_answer, int(correct), elapsed_seconds),
+        )
+        if not correct:
             conn.execute(
                 """
-                INSERT INTO attempts (question_id, mode, selected_answer, is_correct, elapsed_seconds)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO wrong_items (question_id, active, source, added_at, learned_at, updated_at)
+                VALUES (?, 1, 'attempt', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
+                ON CONFLICT(question_id) DO UPDATE SET
+                    active = 1,
+                    source = 'attempt',
+                    learned_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
                 """,
-                (payload.question_id, payload.mode, selected_answer, int(correct), elapsed_seconds),
+                (payload.question_id,),
             )
-            if not correct:
-                conn.execute(
-                    """
-                    INSERT INTO wrong_items (question_id, active, source, added_at, learned_at, updated_at)
-                    VALUES (?, 1, 'attempt', CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
-                    ON CONFLICT(question_id) DO UPDATE SET
-                        active = 1,
-                        source = 'attempt',
-                        learned_at = NULL,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (payload.question_id,),
-                )
-        wrong = conn.execute(
-            "SELECT active FROM wrong_items WHERE question_id = ?",
-            (payload.question_id,),
-        ).fetchone()
-        stats = conn.execute(
-            f"SELECT * FROM ({QUESTION_STATS_SQL}) WHERE question_id = ?",
-            (payload.question_id,),
-        ).fetchone()
-        return AttemptOut(
-            question_id=payload.question_id,
-            selected_answer=selected_answer,
-            correct_answer=question["correct_answer"],
-            is_correct=correct,
-            explanation=question["explanation"],
-            is_wrong_active=bool(wrong["active"]) if wrong else False,
-            elapsed_seconds=elapsed_seconds,
-            wrong_count=int(fetch_question(conn, payload.question_id)["wrong_count"] or 0),
-            attempt_count=int(fetch_question(conn, payload.question_id)["attempt_count"] or 0),
-            last_wrong_at=stats["last_wrong_at"] if stats else None,
-        )
+        return build_attempt_result(conn, payload.question_id, selected_answer, elapsed_seconds, correct, question)
 
 
-@router.patch("/wrong-items/{question_id}")
-def patch_wrong_item(question_id: int, payload: WrongItemPatch) -> dict:
+@router.patch("/questions/{question_id}/wrong-item")
+def patch_question_wrong_item(question_id: int, payload: WrongItemPatch) -> dict:
     with transaction() as conn:
         fetch_question(conn, question_id)
         if payload.learned or payload.active is False:
@@ -319,65 +344,60 @@ def patch_wrong_item(question_id: int, payload: WrongItemPatch) -> dict:
         return {"question_id": question_id, "active": bool(row["active"]), "learned_at": row["learned_at"]}
 
 
-@router.patch("/questions/{question_id}/wrong-count", response_model=QuestionOut)
-def patch_wrong_count(question_id: int, payload: WrongCountPatch) -> QuestionOut:
+@router.patch("/questions/{question_id}/statistics", response_model=QuestionOut)
+def patch_question_statistics(question_id: int, payload: QuestionStatisticsPatch) -> QuestionOut:
     with transaction() as conn:
         fetch_question(conn, question_id)
-        raw = conn.execute(
-            """
-            SELECT SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) AS raw_wrong_count
-            FROM attempts
-            WHERE question_id = ?
-            """,
-            (question_id,),
-        ).fetchone()
-        raw_wrong_count = int(raw["raw_wrong_count"] or 0) if raw else 0
-        target_wrong_count = max(0, int(payload.wrong_count))
-        delta = target_wrong_count - raw_wrong_count
-        active = int(target_wrong_count > 0)
-        learned_at_sql = "NULL" if active else "CURRENT_TIMESTAMP"
-        conn.execute(
-            f"""
-            INSERT INTO wrong_items (question_id, active, source, wrong_count_delta, added_at, learned_at, updated_at)
-            VALUES (?, ?, 'manual_adjustment', ?, CURRENT_TIMESTAMP, {learned_at_sql}, CURRENT_TIMESTAMP)
-            ON CONFLICT(question_id) DO UPDATE SET
-                active = excluded.active,
-                source = 'manual_adjustment',
-                wrong_count_delta = excluded.wrong_count_delta,
-                learned_at = excluded.learned_at,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (question_id, active, delta),
-        )
-        return build_question(conn, fetch_question(conn, question_id))
-
-
-@router.patch("/questions/{question_id}/attempt-count", response_model=QuestionOut)
-def patch_attempt_count(question_id: int, payload: AttemptCountPatch) -> QuestionOut:
-    with transaction() as conn:
-        fetch_question(conn, question_id)
-        raw = conn.execute(
-            """
-            SELECT COUNT(*) AS raw_attempt_count
-            FROM attempts
-            WHERE question_id = ?
-            """,
-            (question_id,),
-        ).fetchone()
-        raw_attempt_count = int(raw["raw_attempt_count"] or 0) if raw else 0
-        target_attempt_count = max(0, int(payload.attempt_count))
-        delta = target_attempt_count - raw_attempt_count
-        conn.execute(
-            """
-            INSERT INTO wrong_items (question_id, active, source, attempt_count_delta, added_at, updated_at)
-            VALUES (?, 0, 'manual_adjustment', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            ON CONFLICT(question_id) DO UPDATE SET
-                source = 'manual_adjustment',
-                attempt_count_delta = excluded.attempt_count_delta,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (question_id, delta),
-        )
+        if payload.wrong_count is not None:
+            raw = conn.execute(
+                """
+                SELECT SUM(CASE WHEN is_correct = 0 THEN 1 ELSE 0 END) AS raw_wrong_count
+                FROM attempts
+                WHERE question_id = ?
+                """,
+                (question_id,),
+            ).fetchone()
+            raw_wrong_count = int(raw["raw_wrong_count"] or 0) if raw else 0
+            target_wrong_count = max(0, int(payload.wrong_count))
+            delta = target_wrong_count - raw_wrong_count
+            active = int(target_wrong_count > 0)
+            learned_at_sql = "NULL" if active else "CURRENT_TIMESTAMP"
+            conn.execute(
+                f"""
+                INSERT INTO wrong_items (question_id, active, source, wrong_count_delta, added_at, learned_at, updated_at)
+                VALUES (?, ?, 'manual_adjustment', ?, CURRENT_TIMESTAMP, {learned_at_sql}, CURRENT_TIMESTAMP)
+                ON CONFLICT(question_id) DO UPDATE SET
+                    active = excluded.active,
+                    source = 'manual_adjustment',
+                    wrong_count_delta = excluded.wrong_count_delta,
+                    learned_at = excluded.learned_at,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (question_id, active, delta),
+            )
+        if payload.attempt_count is not None:
+            raw = conn.execute(
+                """
+                SELECT COUNT(*) AS raw_attempt_count
+                FROM attempts
+                WHERE question_id = ?
+                """,
+                (question_id,),
+            ).fetchone()
+            raw_attempt_count = int(raw["raw_attempt_count"] or 0) if raw else 0
+            target_attempt_count = max(0, int(payload.attempt_count))
+            delta = target_attempt_count - raw_attempt_count
+            conn.execute(
+                """
+                INSERT INTO wrong_items (question_id, active, source, attempt_count_delta, added_at, updated_at)
+                VALUES (?, 0, 'manual_adjustment', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(question_id) DO UPDATE SET
+                    source = 'manual_adjustment',
+                    attempt_count_delta = excluded.attempt_count_delta,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (question_id, delta),
+            )
         return build_question(conn, fetch_question(conn, question_id))
 
 

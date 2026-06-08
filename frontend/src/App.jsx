@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Toaster, toast } from 'sonner'
 import { api } from './api/client'
 import { EXAM_ORDER } from './constants'
-import { Notice, Sidebar, TopBar } from './components/layout'
+import { Sidebar, TopBar } from './components/layout'
 import { HomeView } from './views/HomeView'
 import { PracticeView } from './views/PracticeView'
 import { StrategyView } from './views/StrategyView'
@@ -40,7 +41,13 @@ export default function App() {
     return saved === 'system' ? 'system' : 'default'
   })
   const [loading, setLoading] = useState(false)
-  const [notice, setNotice] = useState(null)
+
+  const showNotice = useCallback((notice) => {
+    if (!notice?.text) return
+    const type = notice.type || 'info'
+    const show = toast[type] || toast
+    show(notice.text, { id: `${type}:${notice.text}` })
+  }, [])
 
   const currentQuestion = questions[currentIndex]
   const submittedElapsed = useMemo(() => {
@@ -71,10 +78,10 @@ export default function App() {
     setLoading(true)
     try {
       const result = await action()
-      if (successMessage) setNotice({ type: 'success', text: successMessage })
+      if (successMessage) showNotice({ type: 'success', text: successMessage })
       return result
     } catch (error) {
-      setNotice({ type: 'error', text: error.message })
+      showNotice({ type: 'error', text: error.message })
       throw error
     } finally {
       setLoading(false)
@@ -83,12 +90,12 @@ export default function App() {
 
   async function startPractice(nextMode) {
     await run(async () => {
-      let path = `/api/questions?mode=${nextMode.type}`
+      let path = nextMode.type === 'wrong' ? '/api/wrong-items' : `/api/questions?mode=${nextMode.type}`
       if (nextMode.type === 'exam') path += `&exam=${encodeURIComponent(nextMode.examCode)}`
       if (nextMode.type === 'mixed') path += '&shuffle=1'
       const data = await api(path)
       if (data.length === 0) {
-        setNotice({ type: 'info', text: '当前模式暂时没有题目。' })
+        showNotice({ type: 'info', text: '当前模式暂时没有题目。' })
         return
       }
       setQuestions(data)
@@ -101,7 +108,7 @@ export default function App() {
 
   function startPracticeFromQuestions(nextQuestions, startIndex = 0, nextMode = { type: 'wrong', label: '错题集' }) {
     if (nextQuestions.length === 0) {
-      setNotice({ type: 'info', text: '当前没有可练习的题目。' })
+      showNotice({ type: 'info', text: '当前没有可练习的题目。' })
       return
     }
     setQuestions(nextQuestions)
@@ -116,7 +123,7 @@ export default function App() {
       const data = await api(`/api/questions?mode=exam&exam=${encodeURIComponent(question.exam_code)}`)
       const targetIndex = data.findIndex((item) => item.id === question.id)
       if (targetIndex < 0) {
-        setNotice({ type: 'error', text: '没有找到对应题目。' })
+        showNotice({ type: 'error', text: '没有找到对应题目。' })
         return
       }
       setQuestions(data)
@@ -136,8 +143,8 @@ export default function App() {
   }
 
   useEffect(() => {
-    loadExams().catch((error) => setNotice({ type: 'error', text: error.message }))
-  }, [])
+    loadExams().catch((error) => showNotice({ type: 'error', text: error.message }))
+  }, [showNotice])
 
   useEffect(() => {
     document.documentElement.dataset.font = fontMode
@@ -146,12 +153,12 @@ export default function App() {
 
   return (
     <div className="min-h-dvh bg-paper-50 text-ink-950">
+      <Toaster position="top-right" closeButton richColors />
       <a className="skip-link" href="#main">跳到主要内容</a>
       <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-[236px_minmax(0,1fr)]">
         <Sidebar view={view || 'home'} totals={totals} />
         <main id="main" className="min-w-0 px-4 py-4 sm:px-6 lg:px-8">
           <TopBar onRefresh={refreshEverything} loading={loading} fontMode={fontMode} setFontMode={setFontMode} />
-          <AnimatePresence>{notice && <Notice notice={notice} onClose={() => setNotice(null)} />}</AnimatePresence>
           <AnimatePresence mode="wait">
             {!view && <Navigate key="not-found" to="/" replace />}
             {view === 'home' && <HomeView key="home" exams={exams} totals={totals} onStart={startPractice} />}
@@ -159,7 +166,7 @@ export default function App() {
               <StrategyView
                 key="strategies"
                 exams={exams}
-                notify={setNotice}
+                notify={showNotice}
                 run={run}
                 reloadExams={loadExams}
                 onOpenQuestion={openQuestionFromStrategy}
@@ -210,7 +217,7 @@ export default function App() {
                 }}
                 onLearned={async () => {
                   await run(async () => {
-                    await api(`/api/wrong-items/${currentQuestion.id}`, {
+                    await api(`/api/questions/${currentQuestion.id}/wrong-item`, {
                       method: 'PATCH',
                       body: JSON.stringify({ learned: true }),
                     })
@@ -224,7 +231,7 @@ export default function App() {
                       setCurrentIndex((value) => Math.max(0, Math.min(value, next.length - 1)))
                       if (mode?.type === 'wrong' && next.length === 0) {
                         navigate(VIEW_TO_ROUTE[mode?.backView] || '/')
-                        setNotice({ type: 'success', text: '错题集已清空。' })
+                        showNotice({ type: 'success', text: '错题集已清空。' })
                       }
                       return next
                     })
@@ -234,14 +241,14 @@ export default function App() {
               />
             )}
             {view === 'admin' && (
-              <AdminView key="admin" exams={exams} reloadExams={loadExams} notify={setNotice} run={run} />
+              <AdminView key="admin" exams={exams} reloadExams={loadExams} notify={showNotice} run={run} />
             )}
             {view === 'wrong' && (
               <WrongItemsView
                 key="wrong"
                 exams={exams}
                 reloadExams={loadExams}
-                notify={setNotice}
+                notify={showNotice}
                 run={run}
                 onStartPractice={startPracticeFromQuestions}
               />

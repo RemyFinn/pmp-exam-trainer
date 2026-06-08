@@ -1,9 +1,6 @@
-import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
-  AlertCircle,
   BookOpen,
-  CheckCircle2,
   Database,
   GraduationCap,
   Lightbulb,
@@ -11,7 +8,6 @@ import {
   ListChecks,
   RefreshCw,
   Target,
-  XCircle,
 } from 'lucide-react'
 import { FONT_OPTIONS } from '../constants'
 import { cn } from '../lib/utils'
@@ -89,30 +85,5 @@ export function TopBar({ onRefresh, loading, fontMode, setFontMode }) {
         </Button>
       </div>
     </header>
-  )
-}
-
-export function Notice({ notice, onClose }) {
-  const Icon = notice.type === 'error' ? AlertCircle : CheckCircle2
-  return (
-    <motion.div
-      className={cn(
-        'mx-auto mb-4 flex max-w-6xl items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-quiet',
-        notice.type === 'error'
-          ? 'border-[#b36a5c]/[0.12] bg-[#f5e7e3] text-[#7f3e36]'
-          : 'border-[#708b68]/[0.12] bg-[#edf4e8] text-[#496a45]',
-      )}
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -6 }}
-      role="status"
-      aria-live="polite"
-    >
-      <Icon size={17} />
-      <div className="min-w-0 flex-1 leading-5">{notice.text}</div>
-      <button type="button" onClick={onClose} aria-label="关闭提示" className="text-current">
-        <XCircle size={17} />
-      </button>
-    </motion.div>
   )
 }
