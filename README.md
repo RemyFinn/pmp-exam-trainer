@@ -1,4 +1,4 @@
-# PMP 做题系统
+# PMP 做题系统 本地轻量版
 
 本地 Web 做题系统，导入四套 PMP 模拟题 Markdown 和 Excel 阅卷结果，使用 FastAPI + SQLite 保存题库、错题集和作答记录。
 
